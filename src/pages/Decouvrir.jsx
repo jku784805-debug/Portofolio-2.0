@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { idb } from '../lib/idb';
+import { storage } from '../lib/storage';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay, Pagination, EffectFade } from 'swiper/modules';
 import 'swiper/css';
@@ -73,7 +73,7 @@ const Decouvrir = () => {
   const [content, setContent] = useState({ ...DEFAULT });
 
   useEffect(() => {
-    idb.get(LS_KEY).then(parsed => {
+    storage.get(LS_KEY).then(parsed => {
       if (parsed) setContent({ ...DEFAULT, ...parsed, sections: { ...DEFAULT.sections, ...(parsed.sections || {}) } });
     }).catch(() => {});
   }, []);
@@ -129,7 +129,7 @@ const Decouvrir = () => {
     try {
       const converted = await convertBlobs(content);
       setContent(converted);
-      await idb.set(LS_KEY, converted);
+      await storage.set(LS_KEY, converted);
       setSaving(false); setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch {
@@ -140,7 +140,7 @@ const Decouvrir = () => {
 
   const onReset = () => {
     if (!confirm('Réinitialiser cette page ?')) return;
-    idb.del(LS_KEY).catch(() => {});
+    storage.del(LS_KEY).catch(() => {});
     setContent({ ...DEFAULT }); setSaved(false);
   };
 

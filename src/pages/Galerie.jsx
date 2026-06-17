@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { idb } from '../lib/idb';
+import { storage } from '../lib/storage';
 import LayoutTemplate, { C, F, ET, UploadBtn, SL, Jp, Lightbox, blobToBase64, convertBlobs } from '../components/LayoutTemplate';
 
 const LS_KEY = 'pf-page-galerie';
@@ -53,7 +53,7 @@ const Galerie = () => {
   const [content, setContent] = useState({ ...DEFAULT });
 
   useEffect(() => {
-    idb.get(LS_KEY).then(parsed => {
+    storage.get(LS_KEY).then(parsed => {
       if (parsed) setContent({ ...DEFAULT, ...parsed, sections: { ...DEFAULT.sections, ...(parsed.sections || {}) } });
     }).catch(() => {});
   }, []);
@@ -121,7 +121,7 @@ const Galerie = () => {
     try {
       const converted = await convertBlobs(content);
       setContent(converted);
-      await idb.set(LS_KEY, converted);
+      await storage.set(LS_KEY, converted);
       setSaving(false); setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch {
@@ -132,7 +132,7 @@ const Galerie = () => {
 
   const onReset = () => {
     if (!confirm('Réinitialiser la galerie ?')) return;
-    idb.del(LS_KEY).catch(() => {});
+    storage.del(LS_KEY).catch(() => {});
     setContent({ ...DEFAULT }); setSaved(false);
   };
 

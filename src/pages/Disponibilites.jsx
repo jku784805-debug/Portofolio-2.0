@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { idb } from '../lib/idb';
+import { storage } from '../lib/storage';
 import LayoutTemplate, { C, F, ET, Jp, Wrap } from '../components/LayoutTemplate';
 import { supabase } from '../lib/supabase';
 
@@ -70,8 +70,8 @@ const Disponibilites = () => {
   const [content,  setContent]    = useState({ ...DEFAULT_CONTENT });
 
   useEffect(() => {
-    idb.get(LS_KEY).then(c => { if (c) setCal(c); }).catch(() => {});
-    idb.get(LS_CONTENT).then(c => { if (c) setContent({ ...DEFAULT_CONTENT, ...c }); }).catch(() => {});
+    storage.get(LS_KEY).then(c => { if (c) setCal(c); }).catch(() => {});
+    storage.get(LS_CONTENT).then(c => { if (c) setContent({ ...DEFAULT_CONTENT, ...c }); }).catch(() => {});
   }, []);
   const historyRef = useRef([]);
   const [hasHistory, setHasHistory] = useState(false);
@@ -150,8 +150,8 @@ const Disponibilites = () => {
   const onSave = async () => {
     setSaving(true);
     try {
-      await idb.set(LS_KEY, cal);
-      await idb.set(LS_CONTENT, content);
+      await storage.set(LS_KEY, cal);
+      await storage.set(LS_CONTENT, content);
     } catch {}
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 3000);
@@ -159,7 +159,7 @@ const Disponibilites = () => {
 
   const onReset = () => {
     if (!confirm('Réinitialiser le calendrier ?')) return;
-    idb.del(LS_KEY).catch(() => {}); idb.del(LS_CONTENT).catch(() => {});
+    storage.del(LS_KEY).catch(() => {}); storage.del(LS_CONTENT).catch(() => {});
     setCal({}); setContent({ ...DEFAULT_CONTENT }); setSaved(false);
   };
 

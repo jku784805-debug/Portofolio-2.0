@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { idb } from '../lib/idb';
+import { storage } from '../lib/storage';
 import LayoutTemplate, { C, F, ET, SL, Jp, Wrap, blobToBase64, convertBlobs } from '../components/LayoutTemplate';
 
 const LS_KEY = 'pf-page-contact';
@@ -40,7 +40,7 @@ const ContactPage = () => {
   const [content, setContent] = useState({ ...DEFAULT });
 
   useEffect(() => {
-    idb.get(LS_KEY).then(parsed => {
+    storage.get(LS_KEY).then(parsed => {
       if (parsed) setContent({ ...DEFAULT, ...parsed, sections: { ...DEFAULT.sections, ...(parsed.sections || {}) } });
     }).catch(() => {});
   }, []);
@@ -96,7 +96,7 @@ const ContactPage = () => {
     try {
       const converted = await convertBlobs(content);
       setContent(converted);
-      await idb.set(LS_KEY, converted);
+      await storage.set(LS_KEY, converted);
       setSaving(false); setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch {
@@ -107,7 +107,7 @@ const ContactPage = () => {
 
   const onReset = () => {
     if (!confirm('Réinitialiser cette page ?')) return;
-    idb.del(LS_KEY).catch(() => {});
+    storage.del(LS_KEY).catch(() => {});
     setContent({ ...DEFAULT }); setSaved(false);
   };
 

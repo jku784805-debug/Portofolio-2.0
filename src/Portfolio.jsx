@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { idb } from './lib/idb';
+import { storage } from './lib/storage';
 import { Link } from 'react-router-dom';
 
 // ── TOKENS ────────────────────────────────────────────────────────────────────
@@ -738,7 +738,7 @@ const Portfolio = ({ onEditClick }) => {
   const [content, setContent] = useState({ ...DEFAULT });
 
   useEffect(() => {
-    idb.get('pf-content-v2').then(parsed => {
+    storage.get('pf-content-v2').then(parsed => {
       if (parsed) setContent({ ...DEFAULT, ...parsed });
     }).catch(() => {});
   }, []);
@@ -821,9 +821,10 @@ const Portfolio = ({ onEditClick }) => {
     try {
       const converted = await convertBlobs(content);
       setContent(converted);
-      await idb.set('pf-content-v2', converted);
-      // Synchronise nav/footer en localStorage (petites données texte, lues par LayoutTemplate)
-      try { localStorage.setItem('pf-nav', JSON.stringify({ nav: converted.nav, footer: converted.footer || {} })); } catch {}
+      await storage.set('pf-content-v2', converted);
+      const navData = { nav: converted.nav, footer: converted.footer || {} };
+      try { localStorage.setItem('pf-nav', JSON.stringify(navData)); } catch {}
+      storage.set('pf-nav', navData).catch(() => {});
       setSaving(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -835,8 +836,9 @@ const Portfolio = ({ onEditClick }) => {
 
   const onReset = () => {
     if (!confirm('Réinitialiser tout le contenu ?')) return;
-    idb.del('pf-content-v2').catch(() => {});
+    storage.del('pf-content-v2').catch(() => {});
     localStorage.removeItem('pf-nav');
+    storage.del('pf-nav').catch(() => {});
     setContent({ ...DEFAULT });
     setSaved(false);
   };

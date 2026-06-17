@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { storage } from '../lib/storage';
 import { Link, useLocation } from 'react-router-dom';
 
 // ── TOKENS ────────────────────────────────────────────────────────────────────
@@ -370,27 +371,36 @@ const LayoutTemplate = ({ children, editMode, setEditMode, onSave, onReset, savi
   const [progress, setProgress] = useState(0);
   const scrollerRef = useRef(null);
 
-  const [nav, setNav] = useState(() => {
-    try {
-      const p = JSON.parse(localStorage.getItem('pf-nav') || '{}');
-      return { logo: p?.nav?.logo || 'Khun.MacJ', logoJp: p?.nav?.logoJp || '写真家', cta: p?.nav?.cta || 'Réserver' };
-    } catch { return { logo: 'Khun.MacJ', logoJp: '写真家', cta: 'Réserver' }; }
+  const localNav = (() => {
+    try { return JSON.parse(localStorage.getItem('pf-nav') || '{}'); } catch { return {}; }
+  })();
+
+  const [nav, setNav] = useState({
+    logo:   localNav?.nav?.logo   || 'Khun.MacJ',
+    logoJp: localNav?.nav?.logoJp || '写真家',
+    cta:    localNav?.nav?.cta    || 'Réserver',
   });
 
-  const [footer, setFooter] = useState(() => {
-    try {
-      const p = JSON.parse(localStorage.getItem('pf-nav') || '{}');
-      return {
-        copyright: p?.footer?.copyright || '© 2025 · TOUS DROITS RÉSERVÉS',
-        social1:   p?.footer?.social1   || 'INSTAGRAM',
-        social2:   p?.footer?.social2   || 'FACEBOOK',
-        social3:   p?.footer?.social3   || 'PINTEREST',
-      };
-    } catch { return { copyright: '© 2025 · TOUS DROITS RÉSERVÉS', social1: 'INSTAGRAM', social2: 'FACEBOOK', social3: 'PINTEREST' }; }
+  const [footer, setFooter] = useState({
+    copyright: localNav?.footer?.copyright || '© 2025 · TOUS DROITS RÉSERVÉS',
+    social1:   localNav?.footer?.social1   || 'INSTAGRAM',
+    social2:   localNav?.footer?.social2   || 'FACEBOOK',
+    social3:   localNav?.footer?.social3   || 'PINTEREST',
   });
+
+  useEffect(() => {
+    storage.get('pf-nav').then(p => {
+      if (!p) return;
+      if (p.nav) setNav({ logo: p.nav.logo || 'Khun.MacJ', logoJp: p.nav.logoJp || '写真家', cta: p.nav.cta || 'Réserver' });
+      if (p.footer) setFooter({ copyright: p.footer.copyright || '© 2025 · TOUS DROITS RÉSERVÉS', social1: p.footer.social1 || 'INSTAGRAM', social2: p.footer.social2 || 'FACEBOOK', social3: p.footer.social3 || 'PINTEREST' });
+      try { localStorage.setItem('pf-nav', JSON.stringify(p)); } catch {}
+    }).catch(() => {});
+  }, []);
 
   const saveNavStore = (navData, footerData) => {
-    try { localStorage.setItem('pf-nav', JSON.stringify({ nav: navData, footer: footerData })); } catch {}
+    const data = { nav: navData, footer: footerData };
+    try { localStorage.setItem('pf-nav', JSON.stringify(data)); } catch {}
+    storage.set('pf-nav', data).catch(() => {});
   };
 
   const setNavField = (key, val) => {
