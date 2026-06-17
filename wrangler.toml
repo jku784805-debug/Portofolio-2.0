@@ -1,7 +1,8 @@
 name = "portofolio-2-0"
 compatibility_date = "2025-01-01"
-main = "_worker.js"
+main = "worker.js"
 
 [assets]
 directory = "./dist"
 binding = "ASSETS"
+html_handling = "none"
