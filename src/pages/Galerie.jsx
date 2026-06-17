@@ -23,37 +23,25 @@ const DEFAULT = {
 
 const SECTION_LABELS = { hero: 'Titre', gallery: 'Galerie' };
 
-const GalCard = ({ g, editMode, onSrc, onCat, onTitle, onOpen, style }) => {
-  const fileRef = useRef(null);
-  return (
-    <div className="lt-img-card" style={{ cursor: editMode ? 'default' : 'pointer', ...style }}
-      onClick={editMode ? undefined : onOpen}
-    >
-      {g.src
-        ? <img src={g.src} alt={g.title} />
-        : <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg,#0D0D1E,#14041A)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ fontFamily: F.m, fontSize: '.55rem', color: 'rgba(255,255,255,.12)', letterSpacing: '.25em' }}>IMAGE</span>
-          </div>
-      }
-      <div className="lt-overlay" style={{ pointerEvents: 'none' }}>
-        <div>
-          <ET value={g.cat}   onChange={onCat}   editMode={editMode} style={{ fontFamily: F.m, fontSize: '.58rem', color: C.red, letterSpacing: '.22em', marginBottom: 6, display: 'block' }} tag="div" />
-          <ET value={g.title} onChange={onTitle} editMode={editMode} style={{ fontFamily: F.h, fontWeight: 700, fontSize: '1rem', color: C.w, display: 'block' }} tag="div" />
+const GalCard = ({ g, editMode, onSrc, onCat, onTitle, onOpen, style }) => (
+  <div className="lt-img-card" style={{ cursor: editMode ? 'default' : 'pointer', ...style }}
+    onClick={editMode ? undefined : onOpen}
+  >
+    {g.src
+      ? <img src={g.src} alt={g.title} />
+      : <div style={{ width: '100%', height: '100%', background: 'linear-gradient(135deg,#0D0D1E,#14041A)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ fontFamily: F.m, fontSize: '.55rem', color: 'rgba(255,255,255,.12)', letterSpacing: '.25em' }}>IMAGE</span>
         </div>
+    }
+    <div className="lt-overlay" style={{ pointerEvents: 'none' }}>
+      <div>
+        <ET value={g.cat}   onChange={onCat}   editMode={editMode} style={{ fontFamily: F.m, fontSize: '.58rem', color: C.red, letterSpacing: '.22em', marginBottom: 6, display: 'block' }} tag="div" />
+        <ET value={g.title} onChange={onTitle} editMode={editMode} style={{ fontFamily: F.h, fontWeight: 700, fontSize: '1rem', color: C.w, display: 'block' }} tag="div" />
       </div>
-      {editMode && (
-        <>
-          <button className="lt-upload" style={{ pointerEvents: 'all' }} onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>
-            <span style={{ fontFamily: F.m, fontSize: '.6rem', color: C.red }}>📁 CHANGER<br /><span style={{ opacity: .5 }}>IMAGE</span></span>
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" hidden
-            onChange={e => { const f = e.target.files[0]; if (f) onSrc(URL.createObjectURL(f)); e.target.value = ''; }}
-          />
-        </>
-      )}
     </div>
-  );
-};
+    {editMode && <UploadBtn onFile={onSrc} />}
+  </div>
+);
 
 const Galerie = () => {
   const [editMode, setEditMode] = useState(false);

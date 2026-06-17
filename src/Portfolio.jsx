@@ -154,49 +154,116 @@ const ET = ({ value, onChange, style, tag:Tag='span', editMode, ph='—' }) => {
   );
 };
 
+// ── CROP HELPER ───────────────────────────────────────────────────────────────
+const cropCenter = (blobUrl, aspectStr) => new Promise(resolve => {
+  const img = new Image();
+  img.onload = () => {
+    const { width:W, height:H } = img;
+    let sx=0, sy=0, sw=W, sh=H;
+    if (aspectStr !== 'free') {
+      const [aw,ah] = aspectStr.split('/').map(Number);
+      const target = aw/ah;
+      if (W/H > target) { sw=H*target; sx=(W-sw)/2; }
+      else              { sh=W/target; sy=(H-sh)/2; }
+    }
+    const MAX=1400, sc=Math.min(1,MAX/Math.max(sw,sh));
+    const canvas = document.createElement('canvas');
+    canvas.width=Math.round(sw*sc); canvas.height=Math.round(sh*sc);
+    canvas.getContext('2d').drawImage(img,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+    canvas.toBlob(b=>resolve(URL.createObjectURL(b)),'image/jpeg',0.85);
+  };
+  img.onerror = () => resolve(blobUrl);
+  img.src = blobUrl;
+});
+
+const ASPECT_PRESETS = [
+  {label:'Libre',value:'free'},{label:'16:9',value:'16/9'},
+  {label:'4:3',value:'4/3'},{label:'3:2',value:'3/2'},
+  {label:'1:1',value:'1/1'},{label:'2:3',value:'2/3'},{label:'9:16',value:'9/16'},
+];
+
+const CropModal = ({ src, aspect, setAspect, onConfirm, onCancel }) => {
+  const ar = aspect==='free' ? undefined : aspect.replace('/',' / ');
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.93)',zIndex:999999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onCancel}>
+      <div style={{background:C.card,border:`1px solid ${C.b10}`,padding:'28px 28px 24px',maxWidth:720,width:'92vw',maxHeight:'92vh',display:'flex',flexDirection:'column'}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontFamily:F.m,fontSize:'.65rem',color:C.red,letterSpacing:'.25em',marginBottom:18}}>✂ ROGNER / RECADRER</div>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16}}>
+          {ASPECT_PRESETS.map(p=>(
+            <button key={p.value} onClick={()=>setAspect(p.value)} style={{
+              background:aspect===p.value?C.r08:'transparent',
+              border:`1px solid ${aspect===p.value?C.red:C.b10}`,
+              color:aspect===p.value?C.red:C.grey,
+              padding:'6px 14px',fontFamily:F.m,fontSize:'.6rem',cursor:'pointer',
+            }}>{p.label}</button>
+          ))}
+        </div>
+        <div style={{flex:1,overflow:'hidden',background:'#000',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:18,minHeight:180,maxHeight:'52vh'}}>
+          <img src={src} alt="aperçu" style={{display:'block',...(ar?{aspectRatio:ar,objectFit:'cover',width:'100%',maxHeight:'52vh'}:{maxWidth:'100%',maxHeight:'52vh',objectFit:'contain'})}} />
+        </div>
+        <div style={{fontFamily:F.m,fontSize:'.56rem',color:C.grey,letterSpacing:'.1em',marginBottom:16,textAlign:'center'}}>Le recadrage centre automatiquement l'image</div>
+        <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+          <button onClick={onCancel} style={{background:'transparent',border:`1px solid ${C.b10}`,color:C.grey,padding:'9px 22px',fontFamily:F.m,fontSize:'.6rem',cursor:'pointer'}}>ANNULER</button>
+          <button onClick={onConfirm} style={{background:C.red,border:'none',color:C.w,padding:'9px 26px',fontFamily:F.m,fontSize:'.6rem',cursor:'pointer'}}>✓ APPLIQUER</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── UPLOAD OVERLAY ────────────────────────────────────────────────────────────
 const UploadBtn = ({ onFile, label='IMAGE', accept='image/*' }) => {
   const r = useRef(null);
+  const [cropSrc, setCropSrc] = useState(null);
+  const [aspect,  setAspect]  = useState('free');
+
+  const handleChange = e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    e.target.value = '';
+    const url = URL.createObjectURL(f);
+    if (f.type.startsWith('video/')) { onFile(url); return; }
+    setCropSrc(url); setAspect('free');
+  };
+
+  const applyCrop = async () => {
+    const cropped = await cropCenter(cropSrc, aspect);
+    setCropSrc(null); onFile(cropped);
+  };
+
+  const cancelCrop = () => { URL.revokeObjectURL(cropSrc); setCropSrc(null); };
+
   return (
     <>
       <button className="pf-upload" onClick={e => { e.stopPropagation(); r.current?.click(); }}>
         <span style={{ fontFamily:F.m, fontSize:'.6rem', color:C.red }}>📁 CHANGER {label}<br/><span style={{ opacity:.5 }}>JPG · PNG · WEBP</span></span>
       </button>
-      <input ref={r} type="file" accept={accept} hidden onChange={e => { const f=e.target.files[0]; if(f) onFile(URL.createObjectURL(f)); e.target.value=''; }} />
+      <input ref={r} type="file" accept={accept} hidden onChange={handleChange} />
+      {cropSrc && <CropModal src={cropSrc} aspect={aspect} setAspect={setAspect} onConfirm={applyCrop} onCancel={cancelCrop} />}
     </>
   );
 };
 
 // ── GALLERY CARD ──────────────────────────────────────────────────────────────
-const GalCard = ({ g, editMode, onChange, onOpen, style }) => {
-  const fileRef = useRef(null);
-  return (
-    <div className="pf-img-card" style={{ cursor: editMode?'default':'pointer', ...style }}
-      onClick={editMode ? undefined : onOpen}
-    >
-      {g.src
-        ? <img src={g.src} alt={g.title} />
-        : <div style={{ width:'100%', height:'100%', background:'linear-gradient(135deg,#0D0D1E,#14041A)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ fontFamily:F.m, fontSize:'.55rem', color:'rgba(255,255,255,.12)', letterSpacing:'.25em' }}>IMAGE</span>
-          </div>
-      }
-      <div className="pf-overlay" style={{ pointerEvents:'none' }}>
-        <div>
-          <ET value={g.cat}   onChange={v=>onChange('cat',v)}   editMode={editMode} style={{ fontFamily:F.m, fontSize:'.58rem', color:C.red, letterSpacing:'.22em', marginBottom:6, display:'block' }} tag='div' />
-          <ET value={g.title} onChange={v=>onChange('title',v)} editMode={editMode} style={{ fontFamily:F.h, fontWeight:700, fontSize:'1rem', color:C.w, display:'block' }} tag='div' />
+const GalCard = ({ g, editMode, onChange, onOpen, style }) => (
+  <div className="pf-img-card" style={{ cursor: editMode?'default':'pointer', ...style }}
+    onClick={editMode ? undefined : onOpen}
+  >
+    {g.src
+      ? <img src={g.src} alt={g.title} />
+      : <div style={{ width:'100%', height:'100%', background:'linear-gradient(135deg,#0D0D1E,#14041A)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <span style={{ fontFamily:F.m, fontSize:'.55rem', color:'rgba(255,255,255,.12)', letterSpacing:'.25em' }}>IMAGE</span>
         </div>
+    }
+    <div className="pf-overlay" style={{ pointerEvents:'none' }}>
+      <div>
+        <ET value={g.cat}   onChange={v=>onChange('cat',v)}   editMode={editMode} style={{ fontFamily:F.m, fontSize:'.58rem', color:C.red, letterSpacing:'.22em', marginBottom:6, display:'block' }} tag='div' />
+        <ET value={g.title} onChange={v=>onChange('title',v)} editMode={editMode} style={{ fontFamily:F.h, fontWeight:700, fontSize:'1rem', color:C.w, display:'block' }} tag='div' />
       </div>
-      {editMode && (
-        <>
-          <button className="pf-upload" style={{ pointerEvents:'all' }} onClick={e => { e.stopPropagation(); fileRef.current?.click(); }}>
-            <span style={{ fontFamily:F.m, fontSize:'.6rem', color:C.red }}>📁 CHANGER<br/><span style={{ opacity:.5 }}>IMAGE</span></span>
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => { const f=e.target.files[0]; if(f) onChange('src',URL.createObjectURL(f)); e.target.value=''; }} />
-        </>
-      )}
     </div>
-  );
-};
+    {editMode && <UploadBtn onFile={v=>onChange('src',v)} />}
+  </div>
+);
 
 // ── LIGHTBOX ──────────────────────────────────────────────────────────────────
 const Lightbox = ({ items, idx, onClose, setIdx }) => {
@@ -623,14 +690,26 @@ const blobToBase64 = (blobUrl) => new Promise(resolve => {
   img.src = blobUrl;
 });
 
-// Recursively convert all blob: strings in an object to base64
 const convertBlobs = async (obj) => {
   if (!obj || typeof obj !== 'object') return obj;
   const out = Array.isArray(obj) ? [] : {};
   for (const k of Object.keys(obj)) {
     const v = obj[k];
     if (typeof v === 'string' && v.startsWith('blob:')) {
-      out[k] = await blobToBase64(v);
+      try {
+        const res  = await fetch(v);
+        const blob = await res.blob();
+        if (blob.type.startsWith('video/')) {
+          out[k] = await new Promise(resolve => {
+            const fr = new FileReader();
+            fr.onload  = () => resolve(fr.result);
+            fr.onerror = () => resolve(null);
+            fr.readAsDataURL(blob);
+          });
+        } else {
+          out[k] = await blobToBase64(v);
+        }
+      } catch { out[k] = await blobToBase64(v); }
     } else if (v && typeof v === 'object') {
       out[k] = await convertBlobs(v);
     } else {
