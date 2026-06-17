@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { idb } from '../lib/idb';
 import LayoutTemplate, { C, F, ET, Jp, Wrap } from '../components/LayoutTemplate';
 import { supabase } from '../lib/supabase';
 
@@ -22,8 +23,8 @@ const DEFAULT_CONTENT = {
   legendUnavailable: 'Indisponible',
 };
 
-const loadCal     = () => { try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { return {}; } };
-const loadContent = () => { try { const s = localStorage.getItem(LS_CONTENT); return s ? { ...DEFAULT_CONTENT, ...JSON.parse(s) } : { ...DEFAULT_CONTENT }; } catch { return { ...DEFAULT_CONTENT }; } };
+const loadCal     = () => ({});
+const loadContent = () => ({ ...DEFAULT_CONTENT });
 
 // ── Statut d'un jour ──────────────────────────────────────────────────────────
 // available (absent de la map), booked, unavailable
@@ -65,8 +66,13 @@ const Disponibilites = () => {
   const [saved,    setSaved]      = useState(false);
   const [year,     setYear]       = useState(today.getFullYear());
   const [month,    setMonth]      = useState(today.getMonth());
-  const [cal,      setCal]        = useState(loadCal);
-  const [content,  setContent]    = useState(loadContent);
+  const [cal,      setCal]        = useState({});
+  const [content,  setContent]    = useState({ ...DEFAULT_CONTENT });
+
+  useEffect(() => {
+    idb.get(LS_KEY).then(c => { if (c) setCal(c); }).catch(() => {});
+    idb.get(LS_CONTENT).then(c => { if (c) setContent({ ...DEFAULT_CONTENT, ...c }); }).catch(() => {});
+  }, []);
   const historyRef = useRef([]);
   const [hasHistory, setHasHistory] = useState(false);
 
@@ -141,18 +147,19 @@ const Disponibilites = () => {
   });
 
   // ── Sauvegarder ──
-  const onSave = () => {
+  const onSave = async () => {
     setSaving(true);
-    try { localStorage.setItem(LS_KEY, JSON.stringify(cal)); } catch {}
-    try { localStorage.setItem(LS_CONTENT, JSON.stringify(content)); } catch {}
+    try {
+      await idb.set(LS_KEY, cal);
+      await idb.set(LS_CONTENT, content);
+    } catch {}
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
 
   const onReset = () => {
     if (!confirm('Réinitialiser le calendrier ?')) return;
-    localStorage.removeItem(LS_KEY);
-    localStorage.removeItem(LS_CONTENT);
+    idb.del(LS_KEY).catch(() => {}); idb.del(LS_CONTENT).catch(() => {});
     setCal({}); setContent({ ...DEFAULT_CONTENT }); setSaved(false);
   };
 

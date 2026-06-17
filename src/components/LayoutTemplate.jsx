@@ -272,16 +272,14 @@ const LayoutTemplate = ({ children, editMode, setEditMode, onSave, onReset, savi
 
   const [nav, setNav] = useState(() => {
     try {
-      const s = localStorage.getItem('pf-content-v2');
-      const p = s ? JSON.parse(s) : null;
+      const p = JSON.parse(localStorage.getItem('pf-nav') || '{}');
       return { logo: p?.nav?.logo || 'Khun.MacJ', logoJp: p?.nav?.logoJp || '写真家', cta: p?.nav?.cta || 'Réserver' };
     } catch { return { logo: 'Khun.MacJ', logoJp: '写真家', cta: 'Réserver' }; }
   });
 
   const [footer, setFooter] = useState(() => {
     try {
-      const s = localStorage.getItem('pf-content-v2');
-      const p = s ? JSON.parse(s) : null;
+      const p = JSON.parse(localStorage.getItem('pf-nav') || '{}');
       return {
         copyright: p?.footer?.copyright || '© 2025 · TOUS DROITS RÉSERVÉS',
         social1:   p?.footer?.social1   || 'INSTAGRAM',
@@ -291,21 +289,24 @@ const LayoutTemplate = ({ children, editMode, setEditMode, onSave, onReset, savi
     } catch { return { copyright: '© 2025 · TOUS DROITS RÉSERVÉS', social1: 'INSTAGRAM', social2: 'FACEBOOK', social3: 'PINTEREST' }; }
   });
 
-  const saveSharedField = (section, key, val) => {
-    try {
-      const s = localStorage.getItem('pf-content-v2');
-      const parsed = s ? JSON.parse(s) : {};
-      parsed[section] = { ...(parsed[section] || {}), [key]: val };
-      localStorage.setItem('pf-content-v2', JSON.stringify(parsed));
-    } catch {}
+  const saveNavStore = (navData, footerData) => {
+    try { localStorage.setItem('pf-nav', JSON.stringify({ nav: navData, footer: footerData })); } catch {}
   };
 
   const setNavField = (key, val) => {
-    setNav(p => { const next = { ...p, [key]: val }; saveSharedField('nav', key, val); return next; });
+    setNav(p => {
+      const next = { ...p, [key]: val };
+      setFooter(f => { saveNavStore(next, f); return f; });
+      return next;
+    });
   };
 
   const setFooterField = (key, val) => {
-    setFooter(p => { const next = { ...p, [key]: val }; saveSharedField('footer', key, val); return next; });
+    setFooter(p => {
+      const next = { ...p, [key]: val };
+      setNav(n => { saveNavStore(n, next); return n; });
+      return next;
+    });
   };
 
   const onScroll = e => {

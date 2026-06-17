@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { idb } from './lib/idb';
 import { Link } from 'react-router-dom';
 
 // ── TOKENS ────────────────────────────────────────────────────────────────────
@@ -655,12 +656,13 @@ const Portfolio = ({ onEditClick }) => {
   const [fullGal,   setFullGal]   = useState(false);
   const [selectedSvc, setSelectedSvc] = useState(null);
 
-  const [content, setContent] = useState(() => {
-    try {
-      const s = localStorage.getItem('pf-content-v2');
-      return s ? { ...DEFAULT, ...JSON.parse(s) } : { ...DEFAULT };
-    } catch { return { ...DEFAULT }; }
-  });
+  const [content, setContent] = useState({ ...DEFAULT });
+
+  useEffect(() => {
+    idb.get('pf-content-v2').then(parsed => {
+      if (parsed) setContent({ ...DEFAULT, ...parsed });
+    }).catch(() => {});
+  }, []);
 
   // ── Undo history ─────────────────────────────────────────────────────────────
   const historyRef = useRef([]);
@@ -738,28 +740,24 @@ const Portfolio = ({ onEditClick }) => {
     setSaving(true);
     setSaved(false);
     try {
-      // Convert all blob: URLs → compressed base64 (persists across page reload)
       const converted = await convertBlobs(content);
-      // Update in-memory state so further saves don't re-convert unnecessarily
       setContent(converted);
-      const json = JSON.stringify(converted);
-      localStorage.setItem('pf-content-v2', json);
+      await idb.set('pf-content-v2', converted);
+      // Synchronise nav/footer en localStorage (petites données texte, lues par LayoutTemplate)
+      try { localStorage.setItem('pf-nav', JSON.stringify({ nav: converted.nav, footer: converted.footer || {} })); } catch {}
       setSaving(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
       setSaving(false);
-      if (e.name === 'QuotaExceededError') {
-        alert('Espace localStorage insuffisant. Essayez de réduire la taille des images.');
-      } else {
-        alert('Erreur lors de la sauvegarde.');
-      }
+      alert('Erreur lors de la sauvegarde.');
     }
   };
 
   const onReset = () => {
     if (!confirm('Réinitialiser tout le contenu ?')) return;
-    localStorage.removeItem('pf-content-v2');
+    idb.del('pf-content-v2').catch(() => {});
+    localStorage.removeItem('pf-nav');
     setContent({ ...DEFAULT });
     setSaved(false);
   };

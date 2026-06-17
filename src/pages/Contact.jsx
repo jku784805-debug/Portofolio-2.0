@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { idb } from '../lib/idb';
 import LayoutTemplate, { C, F, ET, SL, Jp, Wrap, blobToBase64, convertBlobs } from '../components/LayoutTemplate';
 
 const LS_KEY = 'pf-page-contact';
@@ -36,13 +37,13 @@ const ContactPage = () => {
   const [saved,    setSaved]    = useState(false);
   const [form,     setForm]     = useState({ prenom: '', nom: '', mail: '', type: '', date: '', msg: '' });
 
-  const [content, setContent] = useState(() => {
-    try {
-      const s = localStorage.getItem(LS_KEY);
-      const parsed = s ? JSON.parse(s) : null;
-      return parsed ? { ...DEFAULT, ...parsed, sections: { ...DEFAULT.sections, ...(parsed.sections || {}) } } : { ...DEFAULT };
-    } catch { return { ...DEFAULT }; }
-  });
+  const [content, setContent] = useState({ ...DEFAULT });
+
+  useEffect(() => {
+    idb.get(LS_KEY).then(parsed => {
+      if (parsed) setContent({ ...DEFAULT, ...parsed, sections: { ...DEFAULT.sections, ...(parsed.sections || {}) } });
+    }).catch(() => {});
+  }, []);
 
   const historyRef = useRef([]);
   const [hasHistory, setHasHistory] = useState(false);
@@ -95,18 +96,18 @@ const ContactPage = () => {
     try {
       const converted = await convertBlobs(content);
       setContent(converted);
-      localStorage.setItem(LS_KEY, JSON.stringify(converted));
+      await idb.set(LS_KEY, converted);
       setSaving(false); setSaved(true);
       setTimeout(() => setSaved(false), 3000);
-    } catch (e) {
+    } catch {
       setSaving(false);
-      alert(e.name === 'QuotaExceededError' ? 'Espace insuffisant.' : 'Erreur lors de la sauvegarde.');
+      alert('Erreur lors de la sauvegarde.');
     }
   };
 
   const onReset = () => {
     if (!confirm('Réinitialiser cette page ?')) return;
-    localStorage.removeItem(LS_KEY);
+    idb.del(LS_KEY).catch(() => {});
     setContent({ ...DEFAULT }); setSaved(false);
   };
 
