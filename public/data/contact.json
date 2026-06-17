@@ -1,0 +1,24 @@
+{
+  "page": "contact",
+  "hero": {
+    "tagline": "連 絡 · コンタクト · CONTACT",
+    "t1": "Travaillons",
+    "t2": "ensemble"
+  },
+  "info": {
+    "phone": "+33 0 00 00 00 00",
+    "email": "contact@khunmacj.fr",
+    "zone": "Paris · France · International",
+    "jpd": "御連絡をお待ちしております",
+    "jps": "DANS L'ATTENTE DE VOS NOUVELLES"
+  },
+  "form": {
+    "btn": "Envoyer le message"
+  },
+  "services": [
+    { "jp": "一", "label": "Prestation A" },
+    { "jp": "二", "label": "Prestation B" },
+    { "jp": "三", "label": "Prestation C" },
+    { "jp": "四", "label": "Prestation D" }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "page": "galerie",
+  "hero": {
+    "tagline": "写 真 · イメージ · IMAGES",
+    "title": "GALERIE",
+    "sub": "Toutes mes créations visuelles"
+  },
+  "gallery": [
+    { "src": null, "title": "Titre image 1", "cat": "Catégorie A", "visible": true },
+    { "src": null, "title": "Titre image 2", "cat": "Catégorie B", "visible": true },
+    { "src": null, "title": "Titre image 3", "cat": "Catégorie A", "visible": true },
+    { "src": null, "title": "Titre image 4", "cat": "Catégorie C", "visible": true },
+    { "src": null, "title": "Titre image 5", "cat": "Catégorie B", "visible": true },
+    { "src": null, "title": "Titre image 6", "cat": "Catégorie C", "visible": true },
+    { "src": null, "title": "Titre image 7", "cat": "Catégorie A", "visible": true },
+    { "src": null, "title": "Titre image 8", "cat": "Catégorie B", "visible": true },
+    { "src": null, "title": "Titre image 9", "cat": "Catégorie C", "visible": true }
+  ]
+}

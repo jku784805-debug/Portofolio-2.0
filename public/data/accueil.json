@@ -1,0 +1,16 @@
+{
+  "page": "accueil",
+  "nav": { "logo": "Khun.MacJ", "logoJp": "写真家", "cta": "Réserver" },
+  "hero": {
+    "tagline": "写 真 · フォトグラフィー · PHOTOGRAPHIE",
+    "line1": "CRÉATIONS",
+    "line2": "VISUELLES",
+    "location": "Paris · France",
+    "desc": "Description de votre activité. Présentez votre métier en quelques mots clairs. Ce texte est entièrement modifiable.",
+    "cta1": "Voir la galerie",
+    "cta2": "Me contacter",
+    "s1n": "10+", "s1l": "Années",
+    "s2n": "500+", "s2l": "Projets",
+    "s3n": "3K+", "s3l": "Visuels"
+  }
+}

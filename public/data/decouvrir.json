@@ -1,0 +1,34 @@
+{
+  "page": "decouvrir",
+  "hero": {
+    "tagline": "発 見 · ディスカバー · DÉCOUVRIR",
+    "t1": "Mon parcours",
+    "t2": "Ma vision"
+  },
+  "story": {
+    "label": "À PROPOS",
+    "p1": "Premier paragraphe de biographie. Mon histoire, ma passion, mon chemin. Ce texte est entièrement modifiable.",
+    "p2": "Second paragraphe. Mon approche artistique et mes valeurs professionnelles. Personnalisez chaque ligne.",
+    "p3": "Troisième paragraphe. Ma méthode de travail et mes sources d'inspiration créative.",
+    "sig": "Khun.MacJ",
+    "side": "ARTISTE VISUEL · PARIS · FRANCE"
+  },
+  "portrait": null,
+  "timeline": [
+    { "year": "20__", "event": "Début du parcours artistique. Premier événement clé." },
+    { "year": "20__", "event": "Deuxième étape importante dans mon évolution." },
+    { "year": "20__", "event": "Troisième jalons. Développement d'un style unique." },
+    { "year": "20__", "event": "Aujourd'hui. Vision et projets actuels." }
+  ],
+  "values": [
+    { "jp": "一", "title": "Authenticité", "desc": "Chaque image reflète la vérité d'un instant capturé avec sincérité." },
+    { "jp": "二", "title": "Précision",    "desc": "La technique parfaite placée au service de l'émotion pure." },
+    { "jp": "三", "title": "Créativité",   "desc": "Une vision unique et singulière pour chaque projet confié." }
+  ],
+  "approach": {
+    "title": "Mon approche",
+    "p1": "Premier paragraphe sur ma méthode de travail. Comment j'aborde chaque projet, ma préparation et mon processus créatif.",
+    "p2": "Second paragraphe. La relation client, les échanges, et comment je m'adapte à chaque demande spécifique.",
+    "img": null
+  }
+}
