@@ -1,4 +1,4 @@
-name = "portofolio-2-0"
+name = "portofolio"
 compatibility_date = "2025-01-01"
 main = "worker.js"
 
