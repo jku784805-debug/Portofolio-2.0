@@ -1,6 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
-import { storage } from '../lib/storage';
+import { createPortal } from 'react-dom';
+import { storage, auth } from '../lib/storage';
+import { supabase } from '../lib/supabase';
 import { Link, useLocation } from 'react-router-dom';
+
+// Async admin auth — verified server-side (password never in JS bundle)
+const checkAdminPwd = async () => {
+  if (auth.getToken()) return true;                 // already authenticated this session
+  const pwd = prompt('Mot de passe administrateur :');
+  if (!pwd) return false;
+  const ok = await auth.verify(pwd);
+  if (ok) { auth.setToken(pwd); return true; }
+  alert('Mot de passe incorrect.'); return false;
+};
 
 // ── TOKENS ────────────────────────────────────────────────────────────────────
 export const C = {
@@ -21,6 +33,7 @@ const PAGES = [
   { path:'/', label:'Accueil' },
   { path:'/decouvrir', label:'Découvrir' },
   { path:'/galerie', label:'Galerie' },
+  { path:'/collabs', label:'Collabs' },
   { path:'/disponibilites', label:'Disponibilités' },
   { path:'/contact', label:'Contact' },
 ];
@@ -125,10 +138,20 @@ const ASPECT_PRESETS = [
 ];
 
 const CropModal = ({ src, aspect, setAspect, onConfirm, onCancel }) => {
+  const containerRef = useRef(null);
+  if (!containerRef.current) {
+    containerRef.current = document.createElement('div');
+    Object.assign(containerRef.current.style, { position:'fixed', inset:'0', zIndex:'999999', display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,.93)' });
+    document.body.appendChild(containerRef.current);
+  }
+  useEffect(() => {
+    const el = containerRef.current;
+    return () => { if (el && document.body.contains(el)) document.body.removeChild(el); };
+  }, []);
   const ar = aspect === 'free' ? undefined : aspect.replace('/', ' / ');
-  return (
-    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.93)', zIndex:999999, display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onCancel}>
-      <div style={{ background:C.card, border:`1px solid ${C.b10}`, padding:'28px 28px 24px', maxWidth:720, width:'92vw', maxHeight:'92vh', display:'flex', flexDirection:'column' }} onClick={e => e.stopPropagation()}>
+  return createPortal(
+    <div style={{ position:'relative', width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }} onMouseDown={e => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div style={{ background:C.card, border:`1px solid ${C.b10}`, padding:'28px 28px 24px', maxWidth:720, width:'92vw', maxHeight:'92vh', display:'flex', flexDirection:'column' }} onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
         <div style={{ fontFamily:F.m, fontSize:'.65rem', color:C.red, letterSpacing:'.25em', marginBottom:18 }}>✂ ROGNER / RECADRER</div>
         <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:16 }}>
           {ASPECT_PRESETS.map(p => (
@@ -156,15 +179,32 @@ const CropModal = ({ src, aspect, setAspect, onConfirm, onCancel }) => {
           <button onClick={onConfirm} style={{ background:C.red, border:'none', color:C.w, padding:'9px 26px', fontFamily:F.m, fontSize:'.6rem', letterSpacing:'.1em', cursor:'pointer' }}>✓ APPLIQUER</button>
         </div>
       </div>
-    </div>
+    </div>,
+    containerRef.current
   );
 };
 
 // ── UPLOAD OVERLAY ────────────────────────────────────────────────────────────
+export const uploadToStorage = async (blobUrl) => {
+  try {
+    await supabase.storage.createBucket('portfolio-media', { public: true }).catch(() => {});
+    const res  = await fetch(blobUrl);
+    const blob = await res.blob();
+    const name = `img-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+    const { error } = await supabase.storage
+      .from('portfolio-media')
+      .upload(name, blob, { upsert: false, contentType: 'image/jpeg' });
+    if (error) return null;
+    const { data } = supabase.storage.from('portfolio-media').getPublicUrl(name);
+    return data.publicUrl;
+  } catch { return null; }
+};
+
 export const UploadBtn = ({ onFile, label = 'IMAGE', accept = 'image/*' }) => {
   const r = useRef(null);
-  const [cropSrc, setCropSrc] = useState(null);
-  const [aspect,  setAspect]  = useState('free');
+  const [cropSrc,   setCropSrc]   = useState(null);
+  const [aspect,    setAspect]    = useState('free');
+  const [uploading, setUploading] = useState(false);
 
   const handleChange = e => {
     const f = e.target.files[0];
@@ -179,19 +219,25 @@ export const UploadBtn = ({ onFile, label = 'IMAGE', accept = 'image/*' }) => {
   const applyCrop = async () => {
     const cropped = await cropCenter(cropSrc, aspect);
     setCropSrc(null);
-    onFile(cropped);
+    onFile(cropped);        // affiche immédiatement (blob temporaire)
+    setUploading(true);
+    const url = await uploadToStorage(cropped);
+    if (url) onFile(url);   // remplace par l'URL permanente Supabase
+    setUploading(false);
   };
 
   const cancelCrop = () => { URL.revokeObjectURL(cropSrc); setCropSrc(null); };
 
   return (
     <>
-      <button className="lt-upload" onClick={e => { e.stopPropagation(); r.current?.click(); }}>
+      <button className="lt-upload" onClick={e => { e.stopPropagation(); if (!uploading) r.current?.click(); }}
+        style={{ opacity: uploading ? .6 : 1, cursor: uploading ? 'wait' : 'pointer' }}>
         <span style={{ fontFamily:F.m, fontSize:'.6rem', color:C.red }}>
-          📁 CHANGER {label}<br /><span style={{ opacity:.5 }}>JPG · PNG · WEBP</span>
+          {uploading ? '⏳ UPLOAD...' : `📁 CHANGER ${label}`}<br />
+          <span style={{ opacity:.5 }}>{uploading ? 'Patientez...' : 'JPG · PNG · WEBP'}</span>
         </span>
       </button>
-      <input ref={r} type="file" accept={accept} hidden onChange={handleChange} />
+      <input ref={r} type="file" accept={accept} hidden onChange={handleChange} disabled={uploading} />
       {cropSrc && <CropModal src={cropSrc} aspect={aspect} setAspect={setAspect} onConfirm={applyCrop} onCancel={cancelCrop} />}
     </>
   );
@@ -216,9 +262,9 @@ export const Jp = ({ ch, style = {} }) => (
 );
 
 // ── SECTION WRAPPER ───────────────────────────────────────────────────────────
-export const Wrap = ({ id, bg = C.bg, py = 120, children }) => (
-  <section id={id} style={{ position: 'relative', overflow: 'hidden', background: bg, padding: `${py}px 0` }}>
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 60px' }}>{children}</div>
+export const Wrap = ({ id, bg = C.bg, py = 120, pt, pb, children, style, innerStyle }) => (
+  <section id={id} style={{ position: 'relative', overflow: 'hidden', background: bg, padding: `${pt ?? py}px 0 ${pb ?? py}px`, ...style }}>
+    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 60px', ...innerStyle }}>{children}</div>
   </section>
 );
 
@@ -296,16 +342,17 @@ export const convertBlobs = async obj => {
         const res  = await fetch(v);
         const blob = await res.blob();
         if (blob.type.startsWith('video/')) {
-          out[k] = await new Promise(resolve => {
-            const fr = new FileReader();
-            fr.onload  = () => resolve(fr.result);
-            fr.onerror = () => resolve(null);
-            fr.readAsDataURL(blob);
-          });
+          out[k] = v;
         } else {
-          out[k] = await blobToBase64(v);
+          const b64 = await blobToBase64(v);
+          const url = await uploadToStorage(b64);
+          out[k] = url || b64;
         }
-      } catch { out[k] = await blobToBase64(v); }
+      } catch { out[k] = null; }
+    } else if (typeof v === 'string' && v.startsWith('data:image/')) {
+      // migration base64 existant → Supabase Storage
+      const url = await uploadToStorage(v);
+      out[k] = url || v;
     } else if (v && typeof v === 'object') {
       out[k] = await convertBlobs(v);
     } else {
@@ -316,12 +363,15 @@ export const convertBlobs = async obj => {
 };
 
 // ── EDIT BAR (for non-home pages) ─────────────────────────────────────────────
-export const SimpleEditBar = ({ onSave, onReset, saving, saved, onFinish, onUndo, hasHistory, sections, onToggleSection, sectionLabels }) => {
+export const SimpleEditBar = ({ onSave, onReset, saving, saved, onFinish, onUndo, hasHistory, sections, onToggleSection, sectionLabels, onPublish, publishing }) => {
   const [open, setOpen] = useState(false);
+  const busy = saving || publishing;
+  const ok   = '#4CAF50';
+  const statusText = publishing ? '⏳ PUBLICATION...' : saved ? '✓ SAUVEGARDÉ' : saving ? '⏳ SAUVEGARDE...' : '✎ MODE ÉDITION';
   return (
     <div style={{
       position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
-      background: '#0D0D1E', border: `1px solid ${saved ? '#4CAF50' : C.red}`, borderRadius: 8,
+      background: '#0D0D1E', border: `1px solid ${publishing || saved ? ok : C.red}`, borderRadius: 8,
       padding: '10px 16px', zIndex: 99998, display: 'flex', alignItems: 'center', gap: 10,
       boxShadow: '0 8px 40px rgba(0,0,0,.85), 0 0 20px rgba(255,23,68,.18)',
       flexWrap: 'wrap', maxWidth: '96vw', justifyContent: 'center',
@@ -339,8 +389,8 @@ export const SimpleEditBar = ({ onSave, onReset, saving, saved, onFinish, onUndo
           ))}
         </div>
       )}
-      <span style={{ fontFamily: F.m, fontSize: '.58rem', color: saved ? '#4CAF50' : C.red, letterSpacing: '.15em' }}>
-        {saved ? '✓ SAUVEGARDÉ' : saving ? '⏳ SAUVEGARDE...' : '✎ MODE ÉDITION'}
+      <span style={{ fontFamily: F.m, fontSize: '.58rem', color: publishing || saved ? ok : C.red, letterSpacing: '.15em' }}>
+        {statusText}
       </span>
       {sections && (
         <button onClick={() => setOpen(o => !o)} style={{ background: 'transparent', border: `1px solid rgba(255,255,255,.08)`, color: C.grey, padding: '6px 12px', fontFamily: F.m, fontSize: '.6rem', cursor: 'pointer', borderRadius: 3 }}>☰ SECTIONS</button>
@@ -351,20 +401,29 @@ export const SimpleEditBar = ({ onSave, onReset, saving, saved, onFinish, onUndo
         padding: '8px 14px', fontFamily: F.m, fontSize: '.62rem', letterSpacing: '.08em',
         cursor: hasHistory ? 'pointer' : 'default', borderRadius: 3, transition: 'all .2s',
       }} title="Annuler la dernière modification (Ctrl+Z)">↺ ANNULER</button>
-      <button onClick={onSave} disabled={saving} style={{
-        background: saved ? '#4CAF50' : C.red, border: 'none', color: '#fff',
+      <button onClick={onSave} disabled={busy} style={{
+        background: saved ? ok : C.red, border: 'none', color: '#fff',
         padding: '8px 18px', fontFamily: F.m, fontSize: '.65rem', letterSpacing: '.1em',
-        cursor: saving ? 'wait' : 'pointer', borderRadius: 3, transition: 'background .3s', opacity: saving ? .7 : 1,
+        cursor: busy ? 'wait' : 'pointer', borderRadius: 3, transition: 'background .3s', opacity: busy ? .7 : 1,
       }}>
-        {saving ? '⏳ En cours...' : saved ? '✓ Sauvegardé !' : '💾 SAUVEGARDER'}
+        {saving ? '⏳ En cours...' : saved ? '✓ Brouillon !' : '💾 BROUILLON'}
       </button>
+      {onPublish && (
+        <button onClick={onPublish} disabled={busy} style={{
+          background: '#1B5E20', border: `1px solid ${ok}`, color: ok,
+          padding: '8px 18px', fontFamily: F.m, fontSize: '.65rem', letterSpacing: '.1em',
+          cursor: busy ? 'wait' : 'pointer', borderRadius: 3, opacity: busy ? .7 : 1,
+        }}>
+          {publishing ? '⏳ Publication...' : '🌐 PUBLIER'}
+        </button>
+      )}
       <button onClick={onFinish} style={{ background: 'transparent', border: `1px solid rgba(255,255,255,.1)`, color: C.grey, padding: '8px 14px', fontFamily: F.m, fontSize: '.6rem', cursor: 'pointer', borderRadius: 3 }}>✓ TERMINER</button>
     </div>
   );
 };
 
 // ── LAYOUT TEMPLATE ───────────────────────────────────────────────────────────
-const LayoutTemplate = ({ children, editMode, setEditMode, onSave, onReset, saving, saved, pageId, onUndo, hasHistory, sections, onToggleSection, sectionLabels }) => {
+const LayoutTemplate = ({ children, editMode, setEditMode, onSave, onReset, saving, saved, pageId, onUndo, hasHistory, sections, onToggleSection, sectionLabels, onEnterEdit, onExitEdit, onPublish, publishing }) => {
   useLayoutStyles();
   const { pathname } = useLocation();
   const [scrollY, setScrollY] = useState(0);
@@ -389,12 +448,15 @@ const LayoutTemplate = ({ children, editMode, setEditMode, onSave, onReset, savi
   });
 
   useEffect(() => {
-    storage.get('pf-nav').then(p => {
+    const applyNav = p => {
       if (!p) return;
       if (p.nav) setNav({ logo: p.nav.logo || 'Khun.MacJ', logoJp: p.nav.logoJp || '写真家', cta: p.nav.cta || 'Réserver' });
       if (p.footer) setFooter({ copyright: p.footer.copyright || '© 2025 · TOUS DROITS RÉSERVÉS', social1: p.footer.social1 || 'INSTAGRAM', social2: p.footer.social2 || 'FACEBOOK', social3: p.footer.social3 || 'PINTEREST' });
       try { localStorage.setItem('pf-nav', JSON.stringify(p)); } catch {}
-    }).catch(() => {});
+    };
+    storage.get('pf-pub-nav')
+      .then(pub => { if (pub) { applyNav(pub); return; } return storage.get('pf-nav').then(applyNav); })
+      .catch(() => storage.get('pf-nav').then(applyNav).catch(() => {}));
   }, []);
 
   const saveNavStore = (navData, footerData) => {
@@ -480,7 +542,11 @@ const LayoutTemplate = ({ children, editMode, setEditMode, onSave, onReset, savi
             <ET value={nav.cta} onChange={v => setNavField('cta', v)} editMode={editMode} style={{ color: C.w }} />
           </Link>
           <button className="lt-btn-o"
-            onClick={() => setEditMode(m => !m)}
+            onClick={async () => {
+              if (editMode) { auth.clearToken(); onExitEdit ? onExitEdit() : setEditMode(false); return; }
+              if (!(await checkAdminPwd())) return;
+              onEnterEdit ? onEnterEdit() : setEditMode(true);
+            }}
             style={{
               padding: '8px 16px',
               background: editMode ? 'rgba(255,23,68,.1)' : 'transparent',
@@ -534,12 +600,14 @@ const LayoutTemplate = ({ children, editMode, setEditMode, onSave, onReset, savi
           onReset={onReset}
           saving={saving}
           saved={saved}
-          onFinish={() => setEditMode(false)}
+          onFinish={onExitEdit || (() => setEditMode(false))}
           onUndo={onUndo}
           hasHistory={hasHistory}
           sections={sections}
           onToggleSection={onToggleSection}
           sectionLabels={sectionLabels}
+          onPublish={onPublish}
+          publishing={publishing}
         />
       )}
     </div>

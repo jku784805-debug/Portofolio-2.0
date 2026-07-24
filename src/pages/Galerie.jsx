@@ -1,8 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { storage } from '../lib/storage';
 import LayoutTemplate, { C, F, ET, UploadBtn, SL, Jp, Lightbox, blobToBase64, convertBlobs } from '../components/LayoutTemplate';
+import InstagramSection from '../components/InstagramSection';
 
-const LS_KEY = 'pf-page-galerie';
+const LS_KEY  = 'pf-page-galerie';
+const PUB_KEY = 'pf-pub-galerie';
 
 const INIT_GALLERY = Array.from({ length: 9 }, (_, i) => ({
   src: null,
@@ -18,10 +20,10 @@ const DEFAULT = {
     sub: 'Toutes mes créations visuelles',
   },
   gallery: INIT_GALLERY,
-  sections: { hero: true, gallery: true },
+  sections: { hero: true, gallery: true, instagram: true },
 };
 
-const SECTION_LABELS = { hero: 'Titre', gallery: 'Galerie' };
+const SECTION_LABELS = { hero: 'Titre', gallery: 'Galerie', instagram: 'Instagram' };
 
 const GalCard = ({ g, editMode, onSrc, onCat, onTitle, onOpen, style }) => (
   <div className="lt-img-card" style={{ cursor: editMode ? 'default' : 'pointer', ...style }}
@@ -44,19 +46,33 @@ const GalCard = ({ g, editMode, onSrc, onCat, onTitle, onOpen, style }) => (
 );
 
 const Galerie = () => {
-  const [editMode, setEditMode] = useState(false);
-  const [saving,   setSaving]   = useState(false);
-  const [saved,    setSaved]    = useState(false);
-  const [filter,   setFilter]   = useState('Tout');
-  const [lbxIdx,   setLbxIdx]   = useState(null);
+  const [editMode,   setEditMode]   = useState(false);
+  const [saving,     setSaving]     = useState(false);
+  const [saved,      setSaved]      = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [filter,     setFilter]     = useState('Tout');
+  const [lbxIdx,     setLbxIdx]     = useState(null);
 
   const [content, setContent] = useState({ ...DEFAULT });
 
+  const applyContent = c => c && setContent({ ...DEFAULT, ...c, sections: { ...DEFAULT.sections, ...(c.sections || {}) } });
+
   useEffect(() => {
-    storage.get(LS_KEY).then(parsed => {
-      if (parsed) setContent({ ...DEFAULT, ...parsed, sections: { ...DEFAULT.sections, ...(parsed.sections || {}) } });
-    }).catch(() => {});
+    storage.get(PUB_KEY).then(pub => {
+      if (pub) { applyContent(pub); return; }
+      return storage.get(LS_KEY).then(applyContent);
+    }).catch(() => storage.get(LS_KEY).then(applyContent).catch(() => {}));
   }, []);
+
+  const onEnterEdit = () => {
+    storage.get(LS_KEY).then(applyContent).catch(() => {});
+    setEditMode(true);
+  };
+
+  const onExitEdit = () => {
+    storage.get(PUB_KEY).then(pub => { if (pub) applyContent(pub); }).catch(() => {});
+    setEditMode(false);
+  };
 
   const historyRef = useRef([]);
   const [hasHistory, setHasHistory] = useState(false);
@@ -130,9 +146,23 @@ const Galerie = () => {
     }
   };
 
+  const onPublish = async () => {
+    if (publishing) return;
+    setPublishing(true);
+    try {
+      const converted = await convertBlobs(content);
+      setContent(converted);
+      await storage.set(LS_KEY, converted);
+      await storage.set(PUB_KEY, converted);
+      setPublishing(false); setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch { setPublishing(false); alert('Erreur lors de la publication.'); }
+  };
+
   const onReset = () => {
     if (!confirm('Réinitialiser la galerie ?')) return;
     storage.del(LS_KEY).catch(() => {});
+    storage.del(PUB_KEY).catch(() => {});
     setContent({ ...DEFAULT }); setSaved(false);
   };
 
@@ -150,6 +180,8 @@ const Galerie = () => {
       saving={saving} saved={saved}
       pageId="galerie"
       onUndo={undo} hasHistory={hasHistory}
+      onEnterEdit={onEnterEdit} onExitEdit={onExitEdit}
+      onPublish={onPublish} publishing={publishing}
       sections={sections} onToggleSection={toggleSection}
       sectionLabels={SECTION_LABELS}
     >
@@ -229,6 +261,13 @@ const Galerie = () => {
           )}
         </section>
         </>
+      )}
+
+      {/* ══ INSTAGRAM ══ */}
+      {sections.instagram && (
+        <section style={{ background: C.bg, padding: '80px 0' }}>
+          <InstagramSection editMode={editMode} slNum="02" limit={9} cols={3} />
+        </section>
       )}
 
     </LayoutTemplate>

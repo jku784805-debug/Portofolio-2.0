@@ -1,5 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { storage } from './lib/storage';
+import { supabase } from './lib/supabase';
+import { uploadToStorage } from './components/LayoutTemplate';
+import InstagramSection from './components/InstagramSection';
 import { Link } from 'react-router-dom';
 
 // ── TOKENS ────────────────────────────────────────────────────────────────────
@@ -82,7 +86,7 @@ const DEFAULT = {
     btn:'Envoyer le message',
   },
   footer:{ copy:'© 2025 · TOUS DROITS RÉSERVÉS', s1:'INSTAGRAM', s2:'FACEBOOK', s3:'PINTEREST' },
-  sections:{ about:true, services:true, gallery:true, video:true, actu:true, contact:true },
+  sections:{ about:true, services:true, gallery:true, video:true, actu:true, instagram:true, contact:true },
 };
 
 // ── CSS INJECTION ─────────────────────────────────────────────────────────────
@@ -183,10 +187,20 @@ const ASPECT_PRESETS = [
 ];
 
 const CropModal = ({ src, aspect, setAspect, onConfirm, onCancel }) => {
+  const containerRef = useRef(null);
+  if (!containerRef.current) {
+    containerRef.current = document.createElement('div');
+    Object.assign(containerRef.current.style, { position:'fixed', inset:'0', zIndex:'999999', display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,.93)' });
+    document.body.appendChild(containerRef.current);
+  }
+  useEffect(() => {
+    const el = containerRef.current;
+    return () => { if (el && document.body.contains(el)) document.body.removeChild(el); };
+  }, []);
   const ar = aspect==='free' ? undefined : aspect.replace('/',' / ');
-  return (
-    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.93)',zIndex:999999,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={onCancel}>
-      <div style={{background:C.card,border:`1px solid ${C.b10}`,padding:'28px 28px 24px',maxWidth:720,width:'92vw',maxHeight:'92vh',display:'flex',flexDirection:'column'}} onClick={e=>e.stopPropagation()}>
+  return createPortal(
+    <div style={{position:'relative',width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}} onMouseDown={e=>{if(e.target===e.currentTarget)onCancel();}}>
+      <div style={{background:C.card,border:`1px solid ${C.b10}`,padding:'28px 28px 24px',maxWidth:720,width:'92vw',maxHeight:'92vh',display:'flex',flexDirection:'column'}} onMouseDown={e=>e.stopPropagation()} onClick={e=>e.stopPropagation()}>
         <div style={{fontFamily:F.m,fontSize:'.65rem',color:C.red,letterSpacing:'.25em',marginBottom:18}}>✂ ROGNER / RECADRER</div>
         <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16}}>
           {ASPECT_PRESETS.map(p=>(
@@ -207,7 +221,8 @@ const CropModal = ({ src, aspect, setAspect, onConfirm, onCancel }) => {
           <button onClick={onConfirm} style={{background:C.red,border:'none',color:C.w,padding:'9px 26px',fontFamily:F.m,fontSize:'.6rem',cursor:'pointer'}}>✓ APPLIQUER</button>
         </div>
       </div>
-    </div>
+    </div>,
+    containerRef.current
   );
 };
 
@@ -367,7 +382,7 @@ const ServiceDetail = ({ service, editMode, onField, onPhoto, onAddPhoto, onClos
         {editMode && (
           <label style={{ position:'absolute', top:20, right:20, zIndex:10, background:'rgba(255,23,68,.12)', border:`1px dashed ${C.r30}`, color:C.red, padding:'8px 14px', fontFamily:F.m, fontSize:'.6rem', letterSpacing:'.1em', cursor:'pointer' }}>
             📸 IMAGE PRINCIPALE
-            <input type="file" accept="image/*" hidden onChange={e=>{ const f=e.target.files[0]; if(f) onField('heroImg',URL.createObjectURL(f)); e.target.value=''; }} />
+            <input type="file" accept="image/*" hidden onChange={async e=>{ const f=e.target.files[0]; if(!f) return; e.target.value=''; const preview=URL.createObjectURL(f); onField('heroImg',preview); const url=await uploadToStorage(preview); if(url) onField('heroImg',url); }} />
           </label>
         )}
       </div>
@@ -449,7 +464,7 @@ const ServiceDetail = ({ service, editMode, onField, onPhoto, onAddPhoto, onClos
                       <>
                         <label className="pf-upload" style={{ zIndex:5 }}>
                           <span style={{ fontFamily:F.m, fontSize:'.6rem', color:C.red, textAlign:'center' }}>📁 CHANGER<br/><span style={{opacity:.5}}>IMAGE</span></span>
-                          <input type="file" accept="image/*" hidden onChange={e=>{ const f=e.target.files[0]; if(f) onPhoto(pi,URL.createObjectURL(f)); e.target.value=''; }} />
+                          <input type="file" accept="image/*" hidden onChange={async e=>{ const f=e.target.files[0]; if(!f) return; e.target.value=''; const preview=URL.createObjectURL(f); onPhoto(pi,preview); const url=await uploadToStorage(preview); if(url) onPhoto(pi,url); }} />
                         </label>
                         {src && <button type="button" onClick={e=>{e.stopPropagation();onPhoto(pi,null);}} style={{ position:'absolute', top:6, right:6, background:'rgba(255,23,68,.2)', border:`1px solid ${C.red}`, color:C.red, width:24, height:24, cursor:'pointer', fontFamily:F.m, fontSize:'.65rem', zIndex:6 }}>✕</button>}
                       </>
@@ -473,9 +488,222 @@ const ServiceDetail = ({ service, editMode, onField, onPhoto, onAddPhoto, onClos
 };
 
 // ── CONTACT FORM ──────────────────────────────────────────────────────────────
+/* ── Contact form helpers ─── */
+const _MOIS   = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+const _JOURS  = ['L','M','M','J','V','S','D'];
+const _HEURES = Array.from({ length: 13 }, (_, i) => i + 8);
+const _MINS   = ['00','15','30','45'];
+
+const PfPrestationDropdown = ({ services, selected, onSelect }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const fn = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', fn);
+    return () => document.removeEventListener('mousedown', fn);
+  }, []);
+  const sel = services.find(s => s.label === selected);
+  return (
+    <div ref={ref} style={{ position:'relative', marginBottom:12 }}>
+      <div style={{ fontFamily:F.m, fontSize:'.58rem', color:C.grey, letterSpacing:'.2em', marginBottom:6 }}>TYPE DE PRESTATION</div>
+      <button type="button" onClick={() => setOpen(o => !o)} style={{
+        width:'100%', padding:'12px 16px',
+        background: open ? 'rgba(255,23,68,.06)' : 'rgba(255,255,255,.04)',
+        border:`1px solid ${open||selected ? C.red : 'rgba(255,255,255,.08)'}`,
+        color:C.w, fontFamily:F.b, fontSize:'.88rem', textAlign:'left', cursor:'pointer',
+        display:'flex', justifyContent:'space-between', alignItems:'center', transition:'all .2s',
+      }}>
+        <span style={{ display:'flex', alignItems:'center', gap:10 }}>
+          {sel && <span style={{ fontFamily:F.jp, fontSize:'.85rem', color:C.red }}>{sel.jp}</span>}
+          <span style={{ color: selected ? C.w : C.grey }}>{selected || 'Choisir une prestation...'}</span>
+        </span>
+        <span style={{ color:C.red, transition:'transform .2s', display:'inline-block', transform: open ? 'rotate(180deg)' : 'rotate(0deg)', fontSize:'.75rem' }}>▼</span>
+      </button>
+      {open && (
+        <div style={{
+          position:'absolute', top:'calc(100% + 4px)', left:0, right:0, zIndex:9999,
+          background:'#0D0D1E', border:`1px solid ${C.r30}`, boxShadow:'0 16px 48px rgba(0,0,0,.85)',
+          animation:'pf-fadein .18s ease',
+        }}>
+          <div style={{ display:'grid', gridTemplateColumns:'32px 1fr auto', padding:'8px 16px', borderBottom:`1px solid rgba(255,255,255,.05)`, fontFamily:F.m, fontSize:'.52rem', color:C.grey, letterSpacing:'.2em' }}>
+            <span/><span>PRESTATION</span><span style={{ textAlign:'right' }}>TARIF</span>
+          </div>
+          {services.map((s,i) => {
+            const active = selected === s.label;
+            return (
+              <div key={i} onClick={() => { onSelect(active ? '' : s.label); setOpen(false); }} style={{
+                display:'grid', gridTemplateColumns:'32px 1fr auto', padding:'14px 16px', cursor:'pointer',
+                background: active ? 'rgba(255,23,68,.08)' : 'transparent',
+                borderBottom: i < services.length-1 ? `1px solid rgba(255,255,255,.04)` : 'none',
+                borderLeft: active ? `3px solid ${C.red}` : '3px solid transparent', transition:'background .15s',
+              }}
+              onMouseEnter={e => { if (!active) e.currentTarget.style.background='rgba(255,255,255,.03)'; }}
+              onMouseLeave={e => { if (!active) e.currentTarget.style.background='transparent'; }}>
+                <span style={{ fontFamily:F.jp, fontSize:'1rem', color: active ? C.red : 'rgba(255,23,68,.35)', alignSelf:'center' }}>{s.jp}</span>
+                <div style={{ alignSelf:'center' }}>
+                  <div style={{ fontFamily:F.b, fontSize:'.88rem', color: active ? C.w : 'rgba(240,240,245,.85)' }}>{s.label}</div>
+                  {s.desc && <div style={{ fontFamily:F.b, fontSize:'.72rem', color:C.grey, marginTop:2 }}>{s.desc}</div>}
+                </div>
+                <span style={{ fontFamily:F.h, fontWeight:700, fontSize:'.95rem', color: active ? C.red : 'rgba(255,255,255,.5)', alignSelf:'center', whiteSpace:'nowrap' }}>{s.price}</span>
+              </div>
+            );
+          })}
+          {selected && <div onClick={() => { onSelect(''); setOpen(false); }} style={{ padding:'8px 16px', textAlign:'center', fontFamily:F.m, fontSize:'.55rem', color:C.grey, letterSpacing:'.15em', cursor:'pointer', borderTop:`1px solid rgba(255,255,255,.05)` }}>✕ EFFACER</div>}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const PfDateTimePicker = ({ value, onChange }) => {
+  const [open,   setOpen]   = useState(false);
+  const [phase,  setPhase]  = useState('cal');
+  const [selDay, setSelDay] = useState(null);
+  const [selH,   setSelH]   = useState(null);
+  const [selMin, setSelMin] = useState(null);
+  const [view,   setView]   = useState(() => new Date());
+  const ref = useRef(null);
+  useEffect(() => {
+    const fn = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', fn);
+    return () => document.removeEventListener('mousedown', fn);
+  }, []);
+  const year=view.getFullYear(), month=view.getMonth(), today=new Date();
+  const firstDay=new Date(year,month,1).getDay(), offset=firstDay===0?6:firstDay-1, totalDays=new Date(year,month+1,0).getDate();
+  const cells=[]; for(let i=0;i<offset;i++) cells.push(null); for(let d=1;d<=totalDays;d++) cells.push(d);
+  const isPast=d=>d&&new Date(year,month,d)<new Date(today.getFullYear(),today.getMonth(),today.getDate());
+  const isToday=d=>d&&today.getDate()===d&&today.getMonth()===month&&today.getFullYear()===year;
+  const isSel=d=>d&&selDay&&selDay.day===d&&selDay.month===month&&selDay.year===year;
+  const handleConfirm=(h,m)=>{
+    const ds=new Date(selDay.year,selDay.month,selDay.day).toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+    onChange(`${ds} à ${h}h${m}`); setSelH(h); setSelMin(m); setOpen(false); setPhase('cal');
+  };
+  const clear=()=>{ onChange(''); setSelDay(null); setSelH(null); setSelMin(null); setOpen(false); setPhase('cal'); };
+  return (
+    <div ref={ref} style={{ position:'relative', marginBottom:12 }}>
+      <div style={{ fontFamily:F.m, fontSize:'.58rem', color:C.grey, letterSpacing:'.2em', marginBottom:6 }}>DATE & HEURE SOUHAITÉES</div>
+      <button type="button" onClick={() => { setOpen(o=>!o); setPhase('cal'); }} style={{
+        width:'100%', padding:'12px 16px',
+        background: open ? 'rgba(255,23,68,.06)' : 'rgba(255,255,255,.04)',
+        border:`1px solid ${open||value ? C.red : 'rgba(255,255,255,.08)'}`,
+        color: value ? C.w : C.grey, fontFamily:F.b, fontSize:'.88rem', textAlign:'left', cursor:'pointer',
+        display:'flex', justifyContent:'space-between', alignItems:'center', transition:'all .2s',
+      }}>
+        <span>{value || 'Choisir une date et une heure...'}</span>
+        <span style={{ fontFamily:F.m, fontSize:'.75rem', color:C.red }}>📅</span>
+      </button>
+      {open && (
+        <div style={{
+          position:'absolute', top:'calc(100% + 4px)', left:0, right:0, zIndex:9999,
+          background:'#0D0D1E', border:`1px solid ${C.r30}`, boxShadow:'0 16px 48px rgba(0,0,0,.85)',
+          animation:'pf-fadein .18s ease',
+        }}>
+          {phase==='cal' && <>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px', borderBottom:`1px solid rgba(255,255,255,.05)` }}>
+              <button onClick={()=>setView(new Date(year,month-1,1))} style={{ background:'none',border:'none',color:C.red,cursor:'pointer',fontSize:'1.1rem',padding:'2px 8px' }}>‹</button>
+              <span style={{ fontFamily:F.m, fontSize:'.7rem', color:C.w, letterSpacing:'.15em' }}>{_MOIS[month]} {year}</span>
+              <button onClick={()=>setView(new Date(year,month+1,1))} style={{ background:'none',border:'none',color:C.red,cursor:'pointer',fontSize:'1.1rem',padding:'2px 8px' }}>›</button>
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2, padding:'10px 12px 4px' }}>
+              {_JOURS.map((j,i)=><div key={i} style={{ textAlign:'center',fontFamily:F.m,fontSize:'.52rem',color:C.grey,letterSpacing:'.1em',padding:'2px 0' }}>{j}</div>)}
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2, padding:'0 12px 12px' }}>
+              {cells.map((d,i)=>(
+                <button key={i} type="button" onClick={()=>{ if(d&&!isPast(d)){setSelDay({year,month,day:d});setPhase('time');} }} disabled={!d||isPast(d)} style={{
+                  padding:'8px 0', textAlign:'center', fontFamily:F.b, fontSize:'.8rem',
+                  background:isSel(d)?C.red:isToday(d)?'rgba(255,23,68,.12)':'transparent',
+                  color:!d?'transparent':isSel(d)?'#fff':isPast(d)?'rgba(255,255,255,.15)':C.w,
+                  border:isToday(d)&&!isSel(d)?`1px solid ${C.r30}`:'1px solid transparent',
+                  cursor:d&&!isPast(d)?'pointer':'default', transition:'all .12s', borderRadius:2,
+                }}>{d||''}</button>
+              ))}
+            </div>
+            {selDay && <div style={{ padding:'8px 16px',borderTop:`1px solid rgba(255,255,255,.05)`,fontFamily:F.m,fontSize:'.58rem',color:C.red,textAlign:'center',letterSpacing:'.1em' }}>
+              {new Date(selDay.year,selDay.month,selDay.day).toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long'})} — choisir l'heure ›
+            </div>}
+          </>}
+          {phase==='time' && selDay && <>
+            <div style={{ padding:'12px 16px',borderBottom:`1px solid rgba(255,255,255,.05)`,display:'flex',alignItems:'center',gap:10 }}>
+              <button onClick={()=>setPhase('cal')} style={{ background:'none',border:'none',color:C.red,cursor:'pointer',fontSize:'1rem' }}>‹</button>
+              <span style={{ fontFamily:F.m,fontSize:'.68rem',color:C.w,letterSpacing:'.12em' }}>
+                {new Date(selDay.year,selDay.month,selDay.day).toLocaleDateString('fr-FR',{weekday:'long',day:'2-digit',month:'long'}).toUpperCase()}
+              </span>
+            </div>
+            <div style={{ padding:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:16 }}>
+              <div>
+                <div style={{ fontFamily:F.m,fontSize:'.55rem',color:C.grey,letterSpacing:'.2em',marginBottom:8 }}>HEURE</div>
+                <div style={{ display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:4,maxHeight:180,overflowY:'auto' }}>
+                  {_HEURES.map(h=>(
+                    <button key={h} type="button" onClick={()=>setSelH(h)} style={{
+                      padding:'8px 4px',textAlign:'center',fontFamily:F.m,fontSize:'.75rem',
+                      background:selH===h?C.red:'rgba(255,255,255,.04)',
+                      color:selH===h?'#fff':C.w,
+                      border:`1px solid ${selH===h?C.red:'rgba(255,255,255,.06)'}`,
+                      cursor:'pointer',transition:'all .12s',
+                    }}>{h}h</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontFamily:F.m,fontSize:'.55rem',color:C.grey,letterSpacing:'.2em',marginBottom:8 }}>MINUTES</div>
+                <div style={{ display:'flex',flexDirection:'column',gap:6 }}>
+                  {_MINS.map(m=>(
+                    <button key={m} type="button" onClick={()=>setSelMin(m)} style={{
+                      padding:'10px 12px',fontFamily:F.m,fontSize:'.8rem',
+                      background:selMin===m?C.red:'rgba(255,255,255,.04)',
+                      color:selMin===m?'#fff':C.w,
+                      border:`1px solid ${selMin===m?C.red:'rgba(255,255,255,.06)'}`,
+                      cursor:'pointer',transition:'all .12s',
+                    }}>:{m}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div style={{ padding:'12px 16px',borderTop:`1px solid rgba(255,255,255,.05)` }}>
+              <button type="button" onClick={()=>{ if(selH!==null&&selMin!==null) handleConfirm(selH,selMin); }}
+                disabled={selH===null||selMin===null} style={{
+                  width:'100%',padding:12,
+                  background:selH!==null&&selMin!==null?C.red:'rgba(255,255,255,.06)',
+                  border:'none',color:selH!==null&&selMin!==null?'#fff':C.grey,
+                  fontFamily:F.h,fontWeight:700,fontSize:'.8rem',letterSpacing:'.15em',
+                  cursor:selH!==null&&selMin!==null?'pointer':'default',transition:'all .2s',
+                }}>{selH!==null&&selMin!==null?`✓ CONFIRMER ${selH}h${selMin}`:"CHOISIR L'HEURE ET LES MINUTES"}</button>
+            </div>
+          </>}
+          {value && <div onClick={clear} style={{ padding:'8px 16px',textAlign:'center',cursor:'pointer',fontFamily:F.m,fontSize:'.55rem',color:C.grey,letterSpacing:'.15em',borderTop:`1px solid rgba(255,255,255,.05)` }}>✕ EFFACER</div>}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const CONTACT_DEFAULT_SVCS = [
+  { jp:'一', label:'Séance Portrait',  price:'Sur devis', desc:'Shooting individuel, retouches incluses' },
+  { jp:'二', label:'Shooting Famille', price:'Sur devis', desc:'Séance famille en extérieur ou studio' },
+  { jp:'三', label:'Événement',        price:'Sur devis', desc:'Couverture complète, livraison HD rapide' },
+  { jp:'四', label:'Pack Pro',         price:'Sur devis', desc:'Corporate, headshots, contenu visuel' },
+];
+
 const ContactFormSection = ({ email, btnLabel, onBtnChange, editMode }) => {
-  const [f, sf] = useState({ prenom:'', nom:'', mail:'', type:'', date:'', msg:'' });
-  const ch = k => e => sf(p => ({...p,[k]:e.target.value}));
+  const [f, sf]     = useState({ prenom:'', nom:'', mail:'', type:'', date:'', msg:'' });
+  const [svcs, setSvcs] = useState(CONTACT_DEFAULT_SVCS);
+  const ch = k => v => sf(p => ({...p,[k]:v}));
+
+  useEffect(() => {
+    const tryDec = dec => {
+      try {
+        if (!dec || !Array.isArray(dec.services) || !dec.services.length) return false;
+        const mapped = dec.services
+          .filter(s => s.visible !== false)
+          .map(s => ({ jp: s.jp || '一', label: s.title || s.label || '', price: s.price || 'Sur devis', desc: s.desc || '' }));
+        if (mapped.length) { setSvcs(mapped); return true; }
+      } catch { /* skip */ }
+      return false;
+    };
+    storage.get('pf-pub-decouvrir')
+      .then(d => { if (!tryDec(d)) return storage.get('pf-page-decouvrir').then(d2 => { tryDec(d2); }); })
+      .catch(() => {});
+  }, []);
   const send = () => {
     const sub  = encodeURIComponent(`[Contact] ${f.type||'Message'}`);
     const body = encodeURIComponent(`Prénom: ${f.prenom}\nNom: ${f.nom}\nEmail: ${f.mail}\nType: ${f.type}\nDate: ${f.date}\n\n${f.msg}`);
@@ -484,13 +712,13 @@ const ContactFormSection = ({ email, btnLabel, onBtnChange, editMode }) => {
   return (
     <div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
-        <input className="pf-input" placeholder="Prénom"     value={f.prenom} onChange={ch('prenom')} />
-        <input className="pf-input" placeholder="Nom"        value={f.nom}    onChange={ch('nom')} />
+        <input className="pf-input" placeholder="Prénom" value={f.prenom} onChange={e=>ch('prenom')(e.target.value)} />
+        <input className="pf-input" placeholder="Nom"    value={f.nom}    onChange={e=>ch('nom')(e.target.value)} />
       </div>
-      <input className="pf-input" placeholder="Adresse email"         value={f.mail} onChange={ch('mail')} style={{marginBottom:12}} />
-      <input className="pf-input" placeholder="Type de prestation"    value={f.type} onChange={ch('type')} style={{marginBottom:12}} />
-      <input className="pf-input" placeholder="Date souhaitée"        value={f.date} onChange={ch('date')} style={{marginBottom:12}} />
-      <textarea className="pf-input" placeholder="Votre message..." rows={5} value={f.msg} onChange={ch('msg')} style={{resize:'vertical',marginBottom:16}} />
+      <input className="pf-input" placeholder="Adresse email" value={f.mail} onChange={e=>ch('mail')(e.target.value)} style={{marginBottom:12}} />
+      <PfPrestationDropdown services={svcs} selected={f.type} onSelect={ch('type')} />
+      <PfDateTimePicker value={f.date} onChange={ch('date')} />
+      <textarea className="pf-input" placeholder="Votre message..." rows={5} value={f.msg} onChange={e=>ch('msg')(e.target.value)} style={{resize:'vertical',marginBottom:16}} />
       <button className="pf-btn-r" onClick={send} style={{ width:'100%', padding:15, background:C.red, border:'none', color:C.w, fontFamily:F.h, fontWeight:700, fontSize:'.9rem', letterSpacing:'.2em', textTransform:'uppercase', cursor:'pointer' }}>
         <ET value={btnLabel} onChange={onBtnChange} editMode={editMode} style={{ color:C.w }} />
       </button>
@@ -521,8 +749,8 @@ const EditBar = ({ editMode, setEditMode, onSave, onReset, saving, saved, conten
   const [open, setOpen] = useState(false);
   if (!editMode) return null;
   const S = content.sections;
-  const keys   = ['about','services','gallery','video','actu','contact'];
-  const labels = { about:'Présentation', services:'Services', gallery:'Galerie', video:'Vidéo', actu:'Actualités', contact:'Contact' };
+  const keys   = ['about','services','gallery','video','actu','instagram','contact'];
+  const labels = { about:'Présentation', services:'Services', gallery:'Galerie', video:'Vidéo', actu:'Actualités', instagram:'Instagram', contact:'Contact' };
   const toggle = k => setContent(p => ({ ...p, sections:{ ...p.sections, [k]:!p.sections[k] } }));
 
   return (
@@ -690,6 +918,21 @@ const blobToBase64 = (blobUrl) => new Promise(resolve => {
   img.src = blobUrl;
 });
 
+const uploadBase64ToStorage = async (dataUrl) => {
+  try {
+    await supabase.storage.createBucket('portfolio-media', { public: true }).catch(() => {});
+    const res  = await fetch(dataUrl);
+    const blob = await res.blob();
+    const name = `img-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+    const { error } = await supabase.storage
+      .from('portfolio-media')
+      .upload(name, blob, { upsert: false, contentType: 'image/jpeg' });
+    if (error) return null;
+    const { data } = supabase.storage.from('portfolio-media').getPublicUrl(name);
+    return data.publicUrl;
+  } catch { return null; }
+};
+
 const convertBlobs = async (obj) => {
   if (!obj || typeof obj !== 'object') return obj;
   const out = Array.isArray(obj) ? [] : {};
@@ -700,16 +943,17 @@ const convertBlobs = async (obj) => {
         const res  = await fetch(v);
         const blob = await res.blob();
         if (blob.type.startsWith('video/')) {
-          out[k] = await new Promise(resolve => {
-            const fr = new FileReader();
-            fr.onload  = () => resolve(fr.result);
-            fr.onerror = () => resolve(null);
-            fr.readAsDataURL(blob);
-          });
+          out[k] = v;
         } else {
-          out[k] = await blobToBase64(v);
+          const b64 = await blobToBase64(v);
+          const url = await uploadBase64ToStorage(b64);
+          out[k] = url || b64;
         }
-      } catch { out[k] = await blobToBase64(v); }
+      } catch { out[k] = null; }
+    } else if (typeof v === 'string' && v.startsWith('data:image/')) {
+      // migration : base64 existant → Supabase Storage
+      const url = await uploadBase64ToStorage(v);
+      out[k] = url || v;
     } else if (v && typeof v === 'object') {
       out[k] = await convertBlobs(v);
     } else {
@@ -734,6 +978,7 @@ const Portfolio = ({ onEditClick }) => {
   const [saved,     setSaved]     = useState(false);
   const [fullGal,   setFullGal]   = useState(false);
   const [selectedSvc, setSelectedSvc] = useState(null);
+  const [videoUploading, setVideoUploading] = useState(false);
 
   const [content, setContent] = useState({ ...DEFAULT });
 
@@ -813,6 +1058,32 @@ const Portfolio = ({ onEditClick }) => {
       return next;
     });
   }, []);
+
+  const uploadVideo = async (file) => {
+    setVideoUploading(true);
+    const previewUrl = URL.createObjectURL(file);
+    set('video.src', previewUrl);
+    try {
+      await supabase.storage.createBucket('portfolio-media', { public: true }).catch(() => {});
+      const ext  = file.name.split('.').pop();
+      const path = `video-bg.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from('portfolio-media')
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from('portfolio-media').getPublicUrl(path);
+      const publicUrl = data.publicUrl;
+      setContent(prev => {
+        const next = { ...prev, video: { ...prev.video, src: publicUrl } };
+        storage.set('pf-content-v2', next).catch(() => {});
+        return next;
+      });
+    } catch {
+      // garde le blob preview pour la session en cours
+    } finally {
+      setVideoUploading(false);
+    }
+  };
 
   const onSave = async () => {
     if (saving) return;
@@ -912,7 +1183,7 @@ const Portfolio = ({ onEditClick }) => {
           {[['accueil','Accueil'],['presentation','Présentation'],['services','Services']].map(([id,lbl]) => (
             <li key={id}><a className="pf-nav-a" style={{ fontFamily:F.b, fontSize:'.78rem', color:C.grey, letterSpacing:'.08em' }} onClick={()=>goto(id)}>{lbl}</a></li>
           ))}
-          {[['/decouvrir','Découvrir'],['/galerie','Galerie'],['/contact','Contact']].map(([path,lbl]) => (
+          {[['/decouvrir','Découvrir'],['/galerie','Galerie'],['/collabs','Collabs'],['/contact','Contact']].map(([path,lbl]) => (
             <li key={path}><Link to={path} className="pf-nav-a" style={{ fontFamily:F.b, fontSize:'.78rem', color:C.grey, letterSpacing:'.08em', textDecoration:'none' }}>{lbl}</Link></li>
           ))}
         </ul>
@@ -936,7 +1207,7 @@ const Portfolio = ({ onEditClick }) => {
         {editMode && (
           <label style={{ position:'absolute', top:80, right:20, zIndex:10, background:'rgba(255,23,68,.12)', border:`1px dashed ${C.r30}`, color:C.red, padding:'8px 14px', fontFamily:F.m, fontSize:'.6rem', letterSpacing:'.1em', cursor:'pointer' }}>
             📸 IMAGE DE FOND
-            <input type="file" accept="image/*" hidden onChange={e=>{ const f=e.target.files[0]; if(f) set('hero.bg',URL.createObjectURL(f)); e.target.value=''; }} />
+            <input type="file" accept="image/*" hidden onChange={async e=>{ const f=e.target.files[0]; if(!f) return; e.target.value=''; const preview=URL.createObjectURL(f); set('hero.bg',preview); const url=await uploadToStorage(preview); if(url) set('hero.bg',url); }} />
           </label>
         )}
         <div style={{ position:'absolute', inset:0, backgroundImage:`linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px)`, backgroundSize:'80px 80px' }} />
@@ -1211,9 +1482,9 @@ const Portfolio = ({ onEditClick }) => {
             : <div style={{ position:'absolute', inset:0, background:'linear-gradient(135deg,#0D0D1E,#05050A)' }} />
           }
           {editMode && (
-            <label style={{ position:'absolute', top:16, right:16, zIndex:10, background:'rgba(255,23,68,.12)', border:`1px dashed ${C.r30}`, color:C.red, padding:'8px 14px', fontFamily:F.m, fontSize:'.6rem', cursor:'pointer' }}>
-              📹 VIDÉO
-              <input type="file" accept="video/*" hidden onChange={e=>{ const f=e.target.files[0]; if(f) set('video.src',URL.createObjectURL(f)); e.target.value=''; }} />
+            <label style={{ position:'absolute', top:16, right:16, zIndex:10, background:'rgba(255,23,68,.12)', border:`1px dashed ${C.r30}`, color:C.red, padding:'8px 14px', fontFamily:F.m, fontSize:'.6rem', cursor: videoUploading ? 'wait' : 'pointer' }}>
+              {videoUploading ? '⏳ Upload...' : '📹 VIDÉO'}
+              <input type="file" accept="video/*" hidden disabled={videoUploading} onChange={e=>{ const f=e.target.files[0]; if(f) uploadVideo(f); e.target.value=''; }} />
             </label>
           )}
           <div style={{ position:'absolute', inset:0, background:`linear-gradient(${C.bg} 0%,transparent 25%,transparent 75%,${C.bg} 100%)` }} />
@@ -1268,6 +1539,13 @@ const Portfolio = ({ onEditClick }) => {
               );
             })}
           </div>
+        </Wrap>
+      )}
+
+      {/* ══ INSTAGRAM ══ */}
+      {sections.instagram && (
+        <Wrap bg={C.bg2} py={80}>
+          <InstagramSection editMode={editMode} slNum="06" limit={12} cols={4} />
         </Wrap>
       )}
 

@@ -8,6 +8,7 @@ import Portfolio from './Portfolio';
 import Decouvrir from './pages/Decouvrir';
 import Galerie from './pages/Galerie';
 import Contact from './pages/Contact';
+import Collabs from './pages/Collabs';
 import Disponibilites from './pages/Disponibilites';
 import SeancesAdmin from './pages/admin/SeancesAdmin';
 import './GridEditor.css';
@@ -53,6 +54,7 @@ function App() {
           <Route path="/decouvrir"       element={<Decouvrir />} />
           <Route path="/galerie"         element={<Galerie />} />
           <Route path="/contact"           element={<Contact />} />
+          <Route path="/collabs"           element={<Collabs />} />
           <Route path="/disponibilites"  element={<Disponibilites />} />
           <Route path="/admin/seances"   element={<SeancesAdmin />} />
         </Routes>

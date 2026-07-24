@@ -1,19 +1,21 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { storage } from '../lib/storage';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay, Pagination, EffectFade } from 'swiper/modules';
 import 'swiper/css';
 import 'swiper/css/pagination';
 import 'swiper/css/effect-fade';
-import LayoutTemplate, { C, F, ET, UploadBtn, SL, Jp, Wrap, Lightbox, blobToBase64, convertBlobs } from '../components/LayoutTemplate';
+import LayoutTemplate, { C, F, ET, UploadBtn, SL, Jp, Wrap, Lightbox, blobToBase64, convertBlobs, uploadToStorage } from '../components/LayoutTemplate';
 
-const LS_KEY = 'pf-page-decouvrir';
+const LS_KEY  = 'pf-page-decouvrir';
+const PUB_KEY = 'pf-pub-decouvrir';
 
 const DEFAULT = {
   slides: [
-    { bg: null, tag: 'SÉANCE PHOTO', title: 'Votre histoire', sub: 'racontée en images', cta: 'Réserver' },
-    { bg: null, tag: 'PORTRAIT',     title: 'Chaque instant', sub: 'mérite d\'être capturé', cta: 'Voir la galerie' },
-    { bg: null, tag: 'CRÉATIONS',    title: 'L\'art du regard', sub: 'au service de vos émotions', cta: 'Découvrir' },
+    { bg: null, tag: 'SÉANCE PHOTO', title: 'Votre histoire', sub: 'racontée en images',          cta: 'Réserver',        link: '/contact' },
+    { bg: null, tag: 'PORTRAIT',     title: 'Chaque instant', sub: 'mérite d\'être capturé',       cta: 'Voir la galerie', link: '/galerie' },
+    { bg: null, tag: 'CRÉATIONS',    title: 'L\'art du regard', sub: 'au service de vos émotions', cta: 'Découvrir',       link: '/galerie' },
   ],
   intro: {
     t1: 'À propos', t2: 'de moi',
@@ -65,18 +67,26 @@ const imgPlaceholder = (h = 300, label = 'IMAGE') => (
 );
 
 const Decouvrir = () => {
-  const [editMode, setEditMode] = useState(false);
-  const [saving,   setSaving]   = useState(false);
-  const [saved,    setSaved]    = useState(false);
-  const [lbxIdx,   setLbxIdx]   = useState(null);
+  const navigate = useNavigate();
+  const [editMode,   setEditMode]   = useState(false);
+  const [saving,     setSaving]     = useState(false);
+  const [saved,      setSaved]      = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [lbxIdx,     setLbxIdx]     = useState(null);
 
   const [content, setContent] = useState({ ...DEFAULT });
 
+  const applyContent = c => c && setContent({ ...DEFAULT, ...c, sections: { ...DEFAULT.sections, ...(c.sections || {}) } });
+
   useEffect(() => {
-    storage.get(LS_KEY).then(parsed => {
-      if (parsed) setContent({ ...DEFAULT, ...parsed, sections: { ...DEFAULT.sections, ...(parsed.sections || {}) } });
-    }).catch(() => {});
+    storage.get(PUB_KEY).then(pub => {
+      if (pub) { applyContent(pub); return; }
+      return storage.get(LS_KEY).then(applyContent);
+    }).catch(() => storage.get(LS_KEY).then(applyContent).catch(() => {}));
   }, []);
+
+  const onEnterEdit = () => { storage.get(LS_KEY).then(applyContent).catch(() => {}); setEditMode(true); };
+  const onExitEdit  = () => { storage.get(PUB_KEY).then(pub => { if (pub) applyContent(pub); }).catch(() => {}); setEditMode(false); };
 
   const historyRef = useRef([]);
   const [hasHistory, setHasHistory] = useState(false);
@@ -138,9 +148,22 @@ const Decouvrir = () => {
     }
   };
 
+  const onPublish = async () => {
+    if (publishing) return;
+    setPublishing(true);
+    try {
+      const converted = await convertBlobs(content);
+      setContent(converted);
+      await storage.set(LS_KEY, converted);
+      await storage.set(PUB_KEY, converted);
+      setPublishing(false); setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch { setPublishing(false); alert('Erreur lors de la publication.'); }
+  };
+
   const onReset = () => {
     if (!confirm('Réinitialiser cette page ?')) return;
-    storage.del(LS_KEY).catch(() => {});
+    storage.del(LS_KEY).catch(() => {}); storage.del(PUB_KEY).catch(() => {});
     setContent({ ...DEFAULT }); setSaved(false);
   };
 
@@ -157,6 +180,8 @@ const Decouvrir = () => {
       onUndo={undo} hasHistory={hasHistory}
       sections={sections} onToggleSection={toggleSection}
       sectionLabels={SECTION_LABELS}
+      onEnterEdit={onEnterEdit} onExitEdit={onExitEdit}
+      onPublish={onPublish} publishing={publishing}
     >
       <Lightbox items={lbxItems} idx={lbxIdx} onClose={() => setLbxIdx(null)} setIdx={setLbxIdx} />
 
@@ -191,17 +216,30 @@ const Decouvrir = () => {
                     <ET {...t(sl.title, v => setA('slides', i, 'title', v), { display: 'block', color: C.w })} /><br />
                     <ET {...t(sl.sub, v => setA('slides', i, 'sub', v), { display: 'block', color: C.red, textShadow: `0 0 60px rgba(255,23,68,.4)` })} />
                   </h1>
-                  <div style={{ display: 'flex', gap: 12, marginTop: 40 }}>
-                    <button className="lt-btn-r" style={{ padding: '14px 36px', background: C.red, border: 'none', color: C.w, fontFamily: F.h, fontWeight: 700, fontSize: '.85rem', letterSpacing: '.15em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 40, alignItems: 'flex-start' }}>
+                    <button
+                      className="lt-btn-r"
+                      onClick={e => { e.stopPropagation(); if (!editMode && sl.link) navigate(sl.link); }}
+                      style={{ padding: '14px 36px', background: C.red, border: 'none', color: C.w, fontFamily: F.h, fontWeight: 700, fontSize: '.85rem', letterSpacing: '.15em', textTransform: 'uppercase', cursor: 'pointer' }}
+                    >
                       <ET {...t(sl.cta, v => setA('slides', i, 'cta', v), { color: C.w })} />
                     </button>
+                    {editMode && (
+                      <input
+                        value={sl.link || ''}
+                        onChange={e => setA('slides', i, 'link', e.target.value)}
+                        onClick={e => e.stopPropagation()}
+                        placeholder="Lien (ex: /contact)"
+                        style={{ background: 'rgba(0,0,0,.6)', border: `1px solid ${C.r30}`, color: C.grey, fontFamily: F.m, fontSize: '.6rem', padding: '5px 10px', width: 180 }}
+                      />
+                    )}
                   </div>
                 </div>
 
                 {editMode && (
                   <label style={{ position: 'absolute', top: 80, right: 20, zIndex: 10, background: 'rgba(255,23,68,.12)', border: `1px dashed ${C.r30}`, color: C.red, padding: '8px 14px', fontFamily: F.m, fontSize: '.6rem', letterSpacing: '.1em', cursor: 'pointer' }}>
                     📸 IMAGE SLIDE {i + 1}
-                    <input type="file" accept="image/*" hidden onChange={e => { const f = e.target.files[0]; if (f) setA('slides', i, 'bg', URL.createObjectURL(f)); e.target.value = ''; }} />
+                    <input type="file" accept="image/*" hidden onChange={async e => { const f = e.target.files[0]; if (!f) return; e.target.value = ''; const preview = URL.createObjectURL(f); setA('slides', i, 'bg', preview); const url = await uploadToStorage(preview); if (url) setA('slides', i, 'bg', url); }} />
                   </label>
                 )}
               </div>
@@ -387,7 +425,7 @@ const Decouvrir = () => {
             <ET {...t(cta.t2, v => set('cta.t2', v), { display: 'block', color: C.red, textShadow: `0 0 60px rgba(255,23,68,.4)` })} />
           </h2>
           <ET {...t(cta.sub, v => set('cta.sub', v), { fontFamily: F.b, fontSize: '1rem', color: C.grey, maxWidth: 500, lineHeight: 1.7, margin: '0 auto 40px', display: 'block' }, 'p')} />
-          <button className="lt-btn-r" style={{
+          <button className="lt-btn-r" onClick={() => !editMode && navigate('/contact')} style={{
             padding: '18px 52px', background: C.red, border: 'none', color: C.w,
             fontFamily: F.h, fontWeight: 700, fontSize: '1rem', letterSpacing: '.2em', textTransform: 'uppercase', cursor: 'pointer',
             boxShadow: `0 0 60px rgba(255,23,68,.3)`,
